@@ -1,5 +1,6 @@
 data=pd.read_csv('/var/www/DataSets/r8-train.txt')
 sentence=""
+sentences=[]
 for i in range(len(data)):
     if(i<10 and i>0):
-        sentence=sentence+data[:i].values[0][0].split('\t')[1].strip()+". "
+        sentences.append(sentence+data[:i].values[0][0].split('\t')[1].strip()+". ")
