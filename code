@@ -1,6 +1,30 @@
-data=pd.read_csv('/var/www/DataSets/r8-train.txt')
-sentence=""
-sentences=[]
-for i in range(len(data)):
-    if(i<10 and i>0):
-        sentences.append(sentence+data[:i].values[0][0].split('\t')[1].strip()+". ")
+https://www.geeksforgeeks.org/implement-your-own-word2vecskip-gram-model-in-python/
+
+https://towardsdatascience.com/an-implementation-guide-to-word2vec-using-numpy-and-google-sheets-13445eebd281
+
+https://www.kaggle.com/mrisdal/fake-news/downloads/fake-news.zip/1
+
+import re
+
+class MLStripper(HTMLParser):
+    def __init__(self):
+        # initialize the base class
+        HTMLParser.__init__(self)
+
+    def read(self, data):
+        # clear the current output before re-use
+        self._lines = []
+        # re-set the parser's state before re-use
+        self.reset()
+        self.feed(data)
+        return ''.join(self._lines)
+
+    def handle_data(self, d):
+        self._lines.append(d)
+
+def strip_tags(html):
+    s = MLStripper()
+    return s.read(html)
+    
+
+mailBody=re.sub('[^A-Za-z.]+', ' ', strip_tags(mailBody)).strip()
