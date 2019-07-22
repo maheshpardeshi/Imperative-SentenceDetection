@@ -37,3 +37,21 @@ if((column(dep,4).count('VERB'))>0):
      for e in range(len(dep)):
             if((dep[e][4]=='VERB') or (dep[e][3]=='VERB' and dep[e][1]=='aux')):
                 print(dep[e][0])
+                
+def getTenseOfSent(dep):
+    tense = {}
+    past=fut=pres=0   
+    
+    for i in range(len(dep)):         
+        if(dep[i][5] in ["MD","VBC","VBF"]):
+            fut=fut+1
+        if(dep[i][5] in ["VBP", "VBZ","VBG","VB"]):
+            pres=pres+1        
+        if(dep[i][5] in ["VBD", "VBN"]):
+            past=past+1
+        
+    tense["future"] =fut
+    tense["present"]=pres
+    tense["past"] =past    
+    return json.dumps(tense)
+
