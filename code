@@ -28,3 +28,12 @@ def strip_tags(html):
     
 
 mailBody=re.sub('[^A-Za-z.]+', ' ', strip_tags(mailBody)).strip()
+
+dep=getDependency('You need to do this today.')
+
+def column(matrix, i):
+    return [row[i] for row in matrix]
+if((column(dep,4).count('VERB'))>0):
+     for e in range(len(dep)):
+            if((dep[e][4]=='VERB') or (dep[e][3]=='VERB' and dep[e][1]=='aux')):
+                print(dep[e][0])
