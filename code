@@ -55,3 +55,16 @@ def getTenseOfSent(dep):
     tense["past"] =past    
     return json.dumps(tense)
 
+listA=[]
+import re
+for i in range(len(df.text.values)):
+    texts=df.text.values[i]
+    print(type(texts))
+    if(type(texts) is not float):        
+        text=texts.split('\n')
+        for j in range(len(text)):
+            sent=text[j].split('.')
+            for k in range(len(sent)):
+                s=re.sub('[^A-Za-z.]+', ' ', sent[k]).strip()
+                if(len(s)>10):
+                    listA.append(s)
