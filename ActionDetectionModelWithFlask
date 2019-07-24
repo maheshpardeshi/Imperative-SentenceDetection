@@ -1,0 +1,245 @@
+#An imperative sentence is a type of sentence that gives instructions or advice,
+#and expresses a command, an order, a direction, or a request.
+import spacy
+from flask import Flask,request
+from nltk import RegexpParser
+from nltk.tree import Tree
+from nltk import word_tokenize, pos_tag
+import pandas as pd
+from nltk.tokenize import sent_tokenize, word_tokenize
+import nltk
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('wordnet')
+nlpSpacy = spacy.load('en_core_web_lg')
+app = Flask(__name__)
+
+'''get the simple sentences in array from the complex sentence'''
+def seperateSent(sent):
+    dep=getDependency(sent)
+    independentSent=[]
+    Sentences=getIndependentSent(dep)
+    
+    if(Sentences==[]):
+        Sentences.append(sent)
+    return Sentences
+def column(matrix,i):
+    return[row[i] for row in matrix]
+'''Find the dependency in the sentence'''
+def getDependency(sent):  
+    print("sent",sent) 
+    print("Type::::::",type(sent))
+    sent= unicode(sent, "utf-8")
+    print("Type::::::",type(sent))
+    doc = nlpSpacy(sent)
+    dep=[]
+    for token in doc:              
+        dep.append([token.text, token.dep_, token.head.text, token.head.pos_,token.pos_,token.tag_,token.lemma_])
+    
+    return dep
+def getIndependentSent(dep):
+    independentSent=[]    
+    newStart=False
+    words=[]
+    compoundSentences=[]
+    start=0
+    for i in range(len(dep)):
+        if(column(dep,1).count('nsubj')>1):  
+            if(i==len(dep)-1 ):                
+                words.append(dep[i])
+                if(words!=[]):
+                    independentSent.append(words)  
+            if((dep[i][1] == 'punct' or dep[i][1] =='cc' or dep[i][1]== 'mark') and i!=len(dep)-1 ):
+                newStart=True
+            if(newStart): 
+                if(words!=[]):                    
+                    independentSent.append(words)
+                words=[]
+                newStart=False
+            if(newStart == False and dep[i][1] != 'punct' and dep[i][1] != 'mark' and i!=len(dep)-1 ):      
+                words.append(dep[i])            
+        else:          
+            if(column(dep,1).count('cc')>0 and column(dep,1).count('conj') >0):               
+                if(dep[i][1] =='cc'):
+                    cSents=[]                    
+                    for k in range(start,i):                        
+                        #if(dep[k][1] != 'cc'):
+                        cSents.append(dep[k])
+                    start=i
+                    if(cSents!=[]):                        
+                        compoundSentences.append(cSents)
+                if(i==len(dep)-1):
+                    cSents=[]                    
+                    for k in range(start,i+1):                          
+                        #if(dep[k][1] !='cc'):
+                        cSents.append(dep[k])
+                    start=i
+                    if(cSents!=[]):
+                        compoundSentences.append(cSents)
+    if(len(words)>0):
+        compoundSentences=independentSent
+        
+    if(len(compoundSentences)>0):
+        i=-1
+        while(i!=len(compoundSentences)):
+            i=i+1       
+            try:
+                conjPresent=False                
+                for j in range(len(compoundSentences[i])):            
+                    if(compoundSentences[i][j][1]=='conj' and (compoundSentences[i][j][3]=='PROPN' 
+                                                               or compoundSentences[i][j][4]=='PROPN' 
+                                                               or compoundSentences[i][j][4]=='PRON'  
+                                                               or compoundSentences[i][j][4]=='NOUN' )):                                                     
+                        for k in range(len(compoundSentences[i])):                    
+                            compoundSentences[i-1].append(compoundSentences[i][k])
+                        del compoundSentences[i]
+                
+                if(i !=0 and column(compoundSentences[i],1).count('conj')>0):                    
+                    conjPresent=True
+
+                if(i !=0 and conjPresent==False):
+                    for k in range(len(compoundSentences[i])):                    
+                        compoundSentences[i-1].append(compoundSentences[i][k])
+                    del compoundSentences[i]
+                    i=i-1
+            except:                
+                 pass
+        sepSent=[]
+        
+        for i in range(len(compoundSentences)):
+                if(compoundSentences[i]!=[]): 
+                    txt=''    
+                    for j in range(len(compoundSentences[i])):
+                         if((len(compoundSentences[i][j])>0 and j!=0) or (j==0 and compoundSentences[i][j][1]!="cc")):
+                             
+                            txt=txt+' '+compoundSentences[i][j][0]  
+                    
+                    #if(len(sepSent)>0):       
+                       # print(compoundSentences[i])
+                sepSent.append(txt.strip())         
+   
+    if(len(compoundSentences)>0):
+        independentSent=sepSent
+
+    return independentSent    
+    
+
+def is_imperative(tagged_sent):
+    # if the sentence is not a question...
+    #print(tagged_sent)
+    print("tagged_sent",tagged_sent)
+    if tagged_sent[-1][0] != "?":
+        # catches simple imperatives, e.g. "Open the pod bay doors, HAL!"
+        if (tagged_sent[0][1] == "VB" or tagged_sent[0][1] == "VBZ" or tagged_sent[0][1] == "VBP" or 
+        tagged_sent[0][1] == "VBD" or tagged_sent[0][1] == "VBN"  or tagged_sent[0][1] == "MD"):
+            return True
+
+        # catches imperative sentences starting with words like 'please', 'you',...
+        # E.g. "Dave, stop.", "Just take a stress pill and think things over."
+        else:
+            chunk = get_chunks(tagged_sent)
+            # check if the first chunk of the sentence is a VB-Phrase
+            if type(chunk[0]) is Tree and chunk[0].label() == "VB-Phrase":
+                return True
+
+    # Questions can be imperatives too, let's check if this one is
+    else:
+        # check if sentence contains the word 'please'
+        pls = len([w for w in tagged_sent if w[0].lower() == "please"]) > 0
+        # catches requests disguised as questions
+        # e.g. "Open the doors, HAL, please?"
+        chunk = get_chunks(tagged_sent)
+        #print(chunk[-1])
+        if pls and (tagged_sent[0][1] == "VB"  or tagged_sent[0][1] == "VBZ" or tagged_sent[0][1] == "VBP" or 
+        tagged_sent[0][1] == "VBD" or tagged_sent[0][1] == "VBN" or tagged_sent[0][1] == "MD"):
+            return True
+        
+        # catches imperatives ending with a Question tag
+        # and starting with a verb in base form, e.g. "Stop it, will you?"
+        elif type(chunk[-1]) is Tree and chunk[-1].label() == "Q-Tag":
+            if (chunk[0][1] == "VB" or
+                (type(chunk[0]) is Tree and chunk[0].label() == "VB-Phrase")):
+                return True
+            
+        elif (tagged_sent[0][1] == "VB"  or tagged_sent[0][1] == "VBZ" or tagged_sent[0][1] == "VBP" or
+              tagged_sent[0][1] == "VBD" or tagged_sent[0][1] == "VBN" or tagged_sent[0][1] == "MD"):
+            return True
+    return False
+
+# chunks the sentence into grammatical phrases based on its POS-tags
+def get_chunks(tagged_sent):
+    chunkgram = r"""VB-Phrase: {<DT><,>*<VB>}
+                    VB-Phrase: {<RB><VB>}
+                    VB-Phrase: {<UH><,>*<VB>}
+                    VB-Phrase: {<UH><,><VBP>}
+                    VB-Phrase: {<PRP><VB>}
+                    VB-Phrase: {<NN.?>+<,>*<VB>}
+                    Q-Tag: {<,><MD><RB>*<PRP><.>*}"""
+    chunkparser = RegexpParser(chunkgram)
+    return chunkparser.parse(tagged_sent)
+
+def mychunk(sentence1):
+    de=getDependency(sentence1)
+    taglist=[]
+    for k in de:
+        temp=  [k[0],k[5]]
+        taglist.append(tuple(temp))
+    return taglist
+def mychunk1(sentence1):
+    taglist=[]
+    de=getDependency(sentence1)
+    for k in de:
+        temp=  [k[0],k[1]]
+        taglist.append(tuple(temp))   
+    return taglist
+def myimperative(x):
+    tagged_sent=mychunk(x)
+    imp=is_imperative(tagged_sent)
+    mds=['must', 'ought', 'shall', 'should']
+    if imp== False:
+        #depp=mychunk1(x)
+        depp=getDependency(x)
+        for b in range(len(depp)):
+            if(depp[b][0] in mds):
+                imp=True  
+        
+                if(imp==True and len(depp)<b and (depp[b-1][1].find("subj")==True or depp[b+1][1].find("subj")==True))==True:
+                    if(depp[b-1][0]=="I" or depp[b+1][0]=="I")==True:
+                        imp=False
+    return imp
+
+
+
+@app.route('/CheckImperativeSentence', methods=['GET','POST'])
+def procedure():
+    parms=request.args.to_dict() 
+    
+    document=request.args.get('Text')
+    print("document",type(document))
+    #document=document.encode('ascii','ignore')
+    print("document",document)
+    document=document.replace("'","")
+    sent2=sent_tokenize(document)
+ 
+
+    df=pd.DataFrame(columns=['Sentence',"IsImperative"])
+    print("sent2",sent2)
+    
+    listA=[]
+    for sentence_ in sent2:
+        listA.extend(seperateSent(sentence_))
+
+
+    for i in range(len(listA)):
+        word=word_tokenize(listA[i])
+        if len(word)>3:
+            print("listA[i]",listA[i])
+            imp=myimperative(listA[i])
+            list3=[listA[i],imp]
+            df.loc[i]=list3
+    return df.to_json(orient="records")   
+
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0')
