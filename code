@@ -1,70 +1,346 @@
-https://www.geeksforgeeks.org/implement-your-own-word2vecskip-gram-model-in-python/
 
-https://towardsdatascience.com/an-implementation-guide-to-word2vec-using-numpy-and-google-sheets-13445eebd281
 
-https://www.kaggle.com/mrisdal/fake-news/downloads/fake-news.zip/1
-
+import nltk; nltk.download('stopwords')
 import re
+import numpy as np
+import pandas as pd
+from pprint import pprint
 
-class MLStripper(HTMLParser):
-    def __init__(self):
-        # initialize the base class
-        HTMLParser.__init__(self)
+# Gensim
+import gensim
+import gensim.corpora as corpora
+from gensim import corpora, models
+from gensim.utils import simple_preprocess
+from gensim.models import CoherenceModel
 
-    def read(self, data):
-        # clear the current output before re-use
-        self._lines = []
-        # re-set the parser's state before re-use
-        self.reset()
-        self.feed(data)
-        return ''.join(self._lines)
+# spacy for lemmatization
+import spacy
 
-    def handle_data(self, d):
-        self._lines.append(d)
+# Plotting tools
+import pyLDAvis
+import pyLDAvis.gensim  # don't skip this
+#import matplotlib.pyplot as plt
+#get_ipython().run_line_magic('matplotlib', 'inline')
 
-def strip_tags(html):
-    s = MLStripper()
-    return s.read(html)
+# Enable logging for gensim - optional
+import logging
+logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.ERROR)
+
+import warnings
+warnings.filterwarnings("ignore",category=DeprecationWarning)
+
+# NLTK Stop words
+from nltk.corpus import stopwords
+stop_words = stopwords.words('english')
+stop_words.extend(['from', 'subject', 're', 'edu', 'use'])
+
+from docx import Document
+import io
+import os
+import shutil
+from flask import Flask,request
+from pdfminer.converter import TextConverter
+from pdfminer.pdfinterp import PDFPageInterpreter
+from pdfminer.pdfinterp import PDFResourceManager
+from pdfminer.pdfpage import PDFPage
+from pdfminer.layout import LAParams
+import sys, getopt
+
+import pdftitle
+from pdftitle import get_title_from_file
+import docx 
+from docx import Document
+#from win32com import client
+import langdetect
+from langdetect import detect
+
+# Initialize spacy 'en' model, keeping only tagger component (for efficiency)
+# python3 -m spacy download en
+nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])
+app = Flask(__name__)
+#converts pdf, returns its text content as a string
+def convert(fname, pages=None):
+    if not pages:
+        pagenums = set()
+    else:
+        pagenums = set(pages)
+
+    output = io.StringIO()
+    manager = PDFResourceManager()
+    converter = TextConverter(manager, output, laparams=LAParams())
+    interpreter = PDFPageInterpreter(manager, converter)
+
+    infile = open(fname, 'rb')
+    for page in PDFPage.get_pages(infile, pagenums):
+        interpreter.process_page(page)
+    infile.close()
+    converter.close()
+    text = output.getvalue()
+    output.close
+    return text 
+   
+def convertMultiple(pdfDir, txtDir):
+    if pdfDir == "": pdfDir = os.getcwd() + "\\" #if no pdfDir passed in 
+    for pdf in os.listdir(pdfDir): #iterate through pdfs in pdf directory
+        fileExtension = pdf.split(".")[-1]
+        if fileExtension == "pdf":
+            pdfFilename = pdfDir + pdf 
+            text = convert(pdfFilename) #get string of text content of pdf
+            textFilename = txtDir + pdf + ".txt"
+            textFile = open(textFilename, "w", encoding="utf-8") #make text file
+            textFile.write(text) #write text to text file
+			#textFile.close
+            
+
+def convertDocxToText(pdfDir):
+        for d in os.listdir(pdfDir):
+            fileExtension=d.split(".")[-1]
+            if fileExtension =="docx":
+                docxFilename = pdfDir + d
+                print(docxFilename)
+                document = Document(docxFilename)
+                textFilename = txtDir + d + ".txt"
+                with io.open(textFilename,"w", encoding="utf-8") as textFile:
+                    for document in document.paragraphs:
+                        textFile.write(document.text)
+'''
+def convertDocxtoPdf(pdfDir):
+    folder = pdfDir
+    file_type = 'docx'
+    out_folder = pdfDir
+
+    os.chdir(folder)
+
+    if not os.path.exists(out_folder):
+        print ('Creating output folder...')
+        os.makedirs(out_folder)
+        print(out_folder, 'created.')
+    else:
+        print(out_folder, 'already exists.\n')
+
+    for files in os.listdir("."):
+        if files.endswith(".docx"):
+            print(files)
+
+    print ('\n\n')
+    try:
+        word = client.DispatchEx("Word.Application") # Using DispatchEx for an entirely new Word instance
+        word.Visible = True # Added this in here so you can see what I'm talking about with the movement of the dispatch and Quit lines. 
+        for files in os.listdir("."):
+            if files.endswith(".docx"):
+                out_name = files.replace(file_type, r"pdf")
+                in_file = os.path.abspath(folder + "\\" + files)
+                out_file = os.path.abspath(out_folder + "\\" + out_name)
+                doc = word.Documents.Open(in_file)
+                print ('Exporting', out_file)
+                doc.SaveAs(out_file, FileFormat=17)
+                doc.Close()
+
+        word.Quit()
+
+    except Exception as e:
+        print(e)
+    finally:
+        word.Quit()   
+'''        
+def titleFinder():
+    filenames= []
+    titles =[]
+    for fname in os.listdir(pdfDir):
+        fileExtension = fname.split(".")[-1]
+        if fileExtension == "pdf":
+            filenames.append(pdfDir+"{}".format(fname))
+    for filename in filenames:
+        titles.append(get_title_from_file(filename))
+    return titles
+
+id2word ={}
+def corpusCreate(data_from_files):
+    #txt_files = os.listdir(txtDir)
+    #file_names = [file_name.rstrip(".txt") for file_name in txt_files]
+    file_names=''
+    #data_from_files = list()
+    #for txt_file in txt_files:
+        #data_from_files.append(open(txtDir+txt_file,encoding="utf-8").read())
+    # Remove Emails
+    data_from_files = [re.sub('\S*@\S*\s?', '', sent) for sent in data_from_files]
+    # Remove new line characters
+    data_from_files = [re.sub('\s+', ' ', sent) for sent in data_from_files]
+    # Remove distracting single quotes
+    data_from_fiels = [re.sub("\'", "", sent) for sent in data_from_files]
+    #language detection
+    language=[]
+    for text in data_from_files:
+        language.append(detect(text))
+    data_words = list(sent_to_words(data_from_files))
+    #print("data_words",data_words)
+    data_words1=[]
+    for data_word in data_words:
+        data_words1.append([word for word in data_word if len(word)>3])
+    # Build the bigram and trigram models
+    bigram = gensim.models.Phrases(data_words1, min_count=5, threshold=100) # higher threshold fewer phrases.
+    trigram = gensim.models.Phrases(bigram[data_words1], threshold=100)  
+
+    # Faster way to get a sentence clubbed as a trigram/bigram
+    bigram_mod = gensim.models.phrases.Phraser(bigram)
+    trigram_mod = gensim.models.phrases.Phraser(trigram)
+
+    # See trigram example
+    #print(trigram_mod[bigram_mod[data_words1[0]]])
+   # Remove Stop Words
+    data_words_nostops = remove_stopwords(data_words1)
+
+    # Form Bigrams
+    data_words_bigrams = make_bigrams(data_words_nostops,bigram_mod)
+
+    # Do lemmatization keeping only noun, adj, vb, adv
+    data_lemmatized = lemmatization(data_words_bigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ADV'])
+    #print("data_lemmatized",data_lemmatized)
+    #print(data_lemmatized[:1])
+    # Create Dictionary
+    id2word = corpora.Dictionary(data_lemmatized)
+    print("id2word",id2word)
+    #Create Corpus
+    texts = data_lemmatized
+    #id2word.filter_extremes(keep_n=None)
+    #id2word.compactify()
+    # Term Document Frequency
+    corpus = [id2word.doc2bow(text) for text in texts]
+    #print(corpus)
+    corpus_tfidf=Tfidf(corpus)
+    #print(corpus_tfidf)
+    return id2word,corpus_tfidf,corpus,data_lemmatized,file_names,language,data_from_files
+    # View
+    #print(corpus[:1])
+
+def sent_to_words(sentences):
+    for sentence in sentences:
+        yield(gensim.utils.simple_preprocess(str(sentence), deacc=True))  # deacc=True removes punctuations
+
+
+# Define functions for stopwords, bigrams, trigrams and lemmatization
+def remove_stopwords(texts):
+    return [[word for word in simple_preprocess(str(doc)) if word not in stop_words] for doc in texts]
+
+def make_bigrams(texts,bigram_mod):
+    print("ttexts",texts)
+    return [bigram_mod[doc] for doc in texts]
+
+def make_trigrams(texts):
+    return [trigram_mod[bigram_mod[doc]] for doc in texts]
+
+def lemmatization(texts, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ADV']):
+    """https://spacy.io/api/annotation"""
+    texts_out = []
+    for sent in texts:
+        doc = nlp(" ".join(sent)) 
+        texts_out.append([token.lemma_ for token in doc if token.pos_ in allowed_postags])
+
+            
+    return texts_out
+
+
+def Tfidf(corpus):
+    tfidf = models.TfidfModel(corpus)
+    #print(tfidf)
+    return tfidf[corpus]
     
+def format_topics_sentences(ldamodel=None, corpus=None, texts=None):
+    # Init output
+    sent_topics_df = pd.DataFrame()
+     # Get main topic in each document
+    for i, row_list in enumerate(ldamodel[corpus]):
+        row = row_list[0] if ldamodel.per_word_topics else row_list            
+        # print(row)
+        row = sorted(row, key=lambda x: (x[1]), reverse=True)
+        # Get the Dominant topic, Perc Contribution and Keywords for each document
+        for j, (topic_num, prop_topic) in enumerate(row):
+            if j == 0:  # => dominant topic
+                wp = ldamodel.show_topic(topic_num)
+                topic_keywords = ", ".join([word for word, prop in wp])
+                sent_topics_df = sent_topics_df.append(pd.Series([int(topic_num), round(prop_topic,2), topic_keywords]), ignore_index=True)
+            else:
+                break
+    sent_topics_df.columns = ['Dominant_Topic', 'Perc_Contribution', 'Topic_Keywords']
+      # Add original text to the end of the output
+    contents = pd.Series(texts)
+    sent_topics_df = pd.concat([sent_topics_df, contents], axis=1)
+    return(sent_topics_df)
 
-mailBody=re.sub('[^A-Za-z.]+', ' ', strip_tags(mailBody)).strip()
 
-dep=getDependency('You need to do this today.')
+def search_for(df, search_terms):
+    df = df.reset_index(drop=True)
+    keywords = [
+        word_list.split(", ") for word_list in list(df.Keywords)
+    ]
+    indexes = []
+    i = 0
+    for keyword_list in keywords:
+        all_present = True
+        for search_term in search_terms:
+            if search_term not in keyword_list:
+                all_present = False
+                break
+        if all_present:
+            indexes.append(i)
+        i+=1
+    return df.loc[indexes, :]
 
-def column(matrix, i):
-    return [row[i] for row in matrix]
-if((column(dep,4).count('VERB'))>0):
-     for e in range(len(dep)):
-            if((dep[e][4]=='VERB') or (dep[e][3]=='VERB' and dep[e][1]=='aux')):
-                print(dep[e][0])
-                
-def getTenseOfSent(dep):
-    tense = {}
-    past=fut=pres=0   
+def search_for_sentence(df, sentence):
     
-    for i in range(len(dep)):         
-        if(dep[i][5] in ["MD","VBC","VBF"]):
-            fut=fut+1
-        if(dep[i][5] in ["VBP", "VBZ","VBG","VB"]):
-            pres=pres+1        
-        if(dep[i][5] in ["VBD", "VBN"]):
-            past=past+1
-        
-    tense["future"] =fut
-    tense["present"]=pres
-    tense["past"] =past    
-    return json.dumps(tense)
+    text = [' '.join(words) for words in list(df.Text)]
+    indexes = []
+    i = 0
+    sentence = get_rid_of_stopwords(sentence.lower())
+    
+    
+    for sentences in text:
+        if sentence in sentences.lower():
+            indexes.append(i)
+        i+=1
+    return df.loc[indexes, :]
 
-listA=[]
-import re
-for i in range(len(df.text.values)):
-    texts=df.text.values[i]
-    print(type(texts))
-    if(type(texts) is not float):        
-        text=texts.split('\n')
-        for j in range(len(text)):
-            sent=text[j].split('.')
-            for k in range(len(sent)):
-                s=re.sub('[^A-Za-z.]+', ' ', sent[k]).strip()
-                if(len(s)>10):
-                    listA.append(s)
+def get_rid_of_stopwords(sentence):
+    words = sentence.split()
+    return ' '.join([word for word in words if word not in stop_words])
+
+def buildLDA(id2word,corpus_tfidf):
+    
+    # Build LDA model
+    lda_model = gensim.models.ldamodel.LdaModel(corpus=corpus_tfidf,
+                                               id2word=id2word,
+                                               num_topics=2, 
+                                               random_state=100,
+                                               update_every=1,
+                                               chunksize=100,
+                                               passes=10,
+                                               alpha='auto',
+                                               per_word_topics=True)
+    return lda_model
+
+@app.route('/getMetadata', methods=['GET','POST'])
+def buildDataframe():
+    data_from_files=[]
+    parms=request.args.to_dict() 
+    data=parms['Text'] 
+    data_from_files.append(data)
+    file_names=''
+    id2word,corpus_tfidf,corpus,data_lemmatized,file_names,language,data_from_files=corpusCreate(data_from_files)
+    df_topic_sents_keywords = format_topics_sentences(ldamodel=buildLDA(id2word,corpus_tfidf), corpus=corpus_tfidf,
+                                                      texts=data_lemmatized)
+   
+    # Format
+    df_dominant_topic = df_topic_sents_keywords.reset_index()
+    df_dominant_topic.columns = ['Document_No', 'Dominant_Topic', 'Topic_Perc_Contrib', 'Keywords', 'Text']
+    first_words = df_dominant_topic.Keywords.apply(lambda x: x.split(',')[0])
+    df_dominant_topic["file_names"] = file_names
+    df_dominant_topic["Topic"]= first_words
+    #df_dominant_topic["Title"] = titleFinder()
+    df_dominant_topic["Language"] = language
+    df_dominant_topic.head()
+    return df_dominant_topic.to_json(orient='records')
+#data_from_files=["George E. P. Box and N.R. Draper in Empirical Model Building and Response Surfaces, John Wiley & Sons, New York, 1987.So you want to be a data scientist? There is no widely accepteddeﬁnition of who a data scientist is.1 Several books now attempt to deﬁne what data science is and who a data scientist may be, see Patil (2011), Patil (2012), and Loukides (2012). This book’s viewpoint is that a data scientist is someone who asks unique, interesting questions of data based on formal or informal theory, to generate rigorous and useful insights.2 It is likely to be an individual with multi-disciplinary train-ing in computer science, business, economics, statistics, and armed with This encapsulated description of the generic nature of the political agent combines the very well-known observation of  Aristotle that human beings are Zoon Politikon (political animals) and, therefore, intrinsically disposed to use power over others  (and resistance to it) to realize their goals (or to protect themselves from the efforts of others to do so) with the much less well- known observation of the philosophical anthropologist, Arnold Gehlen, that human beings are distinctively incomplete with  regard to their environment and, thus, intrinsically disposed to being dissatisfied with it and seeking to change it – by institutions if possible, by force if necessary.  A. Gehlen, Der Mensch. Seine Natur und seine Stellung in der Welt (1940).  The fact that Gehlen was a convinced and unrepentant Nazi no doubt has contributed to the reluctance to attribute this important observation to him. It also probably did not help that his brother, Reinhard, was a Nazi general in charge of intelligence on the Eastern Front who subsequently became the founder of the West German equivalent of the CIA. imagine future conditions and the alternative actions that might improve or threaten the quality of that environment and their existence within it. If these generic characteristics of agents are true, politics as a human behavior is likely to be in almost permanent violation of two of the foundational principles of the physical sciences: the First and Second Laws of Thermodynamics: (1) The agents involved will not normally be able to contain their actions and reactions within a closed homeostatic system  and, hence, will be continuously subjected to exogenously induced changes in their relative power resources to which they will have to respond by changing their behaviour or preferences; (2) Even if they do succeed in isolating, controlling and/or satisfying these disturbing outside influences and, therefore, in promoting entropy in their institutions, they will never be completely successful in sustaining an equilibrium between conflicting and competing forces.  Proponents of change may tire of the costs of politics and be tempted to withdraw from the struggle; their opponents may welcome the stability of the institutions and policies that brought them to power and protect their resources, but this does not to prevent even conservatives from inventing new motives for being dissatisfied, not to mention the perpetual presence in politics of progressives who are by definition dissatisfied with the magnitude or distribution of results.  In other words, politics is an intrinsically dynamic and imbalanced process.  The quest for stability has been an eternal component of the practice of politics (not to mention, objective of "]
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0')
